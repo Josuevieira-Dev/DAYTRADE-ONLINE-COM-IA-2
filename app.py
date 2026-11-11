@@ -30,7 +30,9 @@ app_state = {
     "events": deque(maxlen=100),
     "last_errors": {},
     "last_ticks": {},
+    "alerts": deque(maxlen=50),
 }
+last_confirmed_signal = {symbol: "AGUARDAR" for symbol in SYMBOLS}
 history = defaultdict(lambda: deque(maxlen=250))
 clients = set()
 
@@ -194,11 +196,29 @@ async def market_loop():
                     if candle["closed"]:
                         result = analyze(symbol)
                         app_state["symbols"][symbol] = result
-                        if result["signal"] in ("LONG", "SHORT") and result["signal"] != previous:
+                        confirmed = result["signal"]
+                        prior_confirmed = last_confirmed_signal.get(symbol, "AGUARDAR")
+                        last_confirmed_signal[symbol] = confirmed
+                        if confirmed in ("LONG", "SHORT") and confirmed != prior_confirmed:
+                            alert = {
+                                "id": f"{symbol}-{candle['time']}-{confirmed}",
+                                "symbol": symbol,
+                                "signal": confirmed,
+                                "action": "COMPRA" if confirmed == "LONG" else "VENDA",
+                                "price": result.get("price"),
+                                "score": result.get("score"),
+                                "stop": result.get("stop"),
+                                "target": result.get("target"),
+                                "time": int(time.time()),
+                                "candle_time": candle["time"],
+                                "reason": result.get("reason", "")
+                            }
+                            app_state["alerts"].appendleft(alert)
                             app_state["events"].appendleft({
                                 "time": datetime.now().strftime("%H:%M:%S"),
-                                "text": f'{symbol}: sinal {result["signal"]} — score {result["score"]}/100'
+                                "text": f'{symbol}: sinal {confirmed} — score {result["score"]}/100'
                             })
+                            await broadcast({"type": "signal_alert", "alert": alert})
         except Exception as e:
             app_state["connected"] = False
             app_state["last_errors"]["websocket"] = str(e)
@@ -265,7 +285,7 @@ async def state():
         "history_counts": {s: len(history[s]) for s in SYMBOLS},
         "last_ticks": app_state["last_ticks"],
         "data_errors": app_state["last_errors"],
-        "events": list(app_state["events"])
+        "events": list(app_state["events"]),\n        "alerts": list(app_state["alerts"])
     }
 
 @app.post("/api/settings")
