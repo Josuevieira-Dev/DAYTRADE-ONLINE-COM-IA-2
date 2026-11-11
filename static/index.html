@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IA Crypto Trader M1</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#121a2d;--line:#26334d;--muted:#93a4bf;--green:#18c784;--red:#ff5d6c;--yellow:#f6c453}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#eaf0fa;font:14px Arial,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap}
+h1{font-size:19px;margin:0}small,.muted{color:var(--muted)}.wrap{max-width:1500px;margin:auto;padding:18px}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.panel,.coin{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px}
+.label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.value{font-size:23px;font-weight:700;margin-top:8px}
+.grid{display:grid;grid-template-columns:1.7fr 1fr;gap:14px;margin-top:14px}
+#chart{height:390px}.coins{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+.coin{cursor:pointer}.coin.active{border-color:#4c8dff}.signal{font-weight:800;margin-top:8px}.LONG{color:var(--green)}.SHORT{color:var(--red)}.AGUARDAR{color:var(--yellow)}
+button,input{background:#1a2740;color:#fff;border:1px solid var(--line);padding:10px;border-radius:8px}
+button{cursor:pointer}button.primary{background:#245bd6;border:0}input{width:120px}
+.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}
+.metric{background:#0d1527;border-radius:8px;padding:10px}.metric b{display:block;margin-top:5px}
+#events{max-height:250px;overflow:auto}.event{padding:9px 0;border-bottom:1px solid var(--line);color:#c7d3e6}
+.status{display:flex;align-items:center;gap:8px}.dot{width:8px;height:8px;border-radius:50%;background:var(--red)}.dot.on{background:var(--green)}
+.warning{margin-top:14px;padding:12px;border:1px solid #715c2b;background:#292316;color:#f4d78c;border-radius:10px}
+@media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.coins{grid-template-columns:repeat(2,1fr)}#chart{height:320px}}
+@media(max-width:480px){.wrap{padding:10px}.cards{gap:8px}.panel{padding:12px}.value{font-size:19px}header{padding:14px}.coins{gap:7px}}
+</style></head>
+<body>
+<header><div><h1>⚡ IA CRYPTO TRADER M1</h1><small>Binance USDⓈ-M Futures · candles de 1 minuto</small></div>
+<div class="status"><span id="dot" class="dot"></span><span id="conn">Conectando...</span><span class="muted">|</span><b>SIMULAÇÃO</b></div></header>
+<main class="wrap">
+<section class="cards">
+<div class="panel"><div class="label">Capital simulado (USDT)</div><div class="value" id="capitalView">1,000.00</div></div>
+<div class="panel"><div class="label">Risco por operação</div><div class="value" id="riskView">2.00%</div></div>
+<div class="panel"><div class="label">Ativos monitorados</div><div class="value">04</div></div>
+<div class="panel"><div class="label">Timeframe</div><div class="value">M1</div></div>
+</section>
+<section class="coins" id="coins"></section>
+<section class="grid">
+<div class="panel"><div class="row" style="justify-content:space-between"><b id="chartTitle">BTCUSDT · 1 minuto</b><span class="muted" id="lastPrice">Aguardando dados</span></div><div id="chart"></div></div>
+<div class="panel"><b>ANÁLISE DA IA</b><div class="signal AGUARDAR" id="signal">AGUARDAR DADOS</div><p class="muted" id="reason">Carregando histórico de mercado...</p>
+<div class="metrics">
+<div class="metric"><small>Pontuação</small><b id="score">—</b></div><div class="metric"><small>RSI 14</small><b id="rsi">—</b></div>
+<div class="metric"><small>Stop estimado</small><b id="stop">—</b></div><div class="metric"><small>Alvo estimado (2R)</small><b id="target">—</b></div>
+<div class="metric"><small>EMA 9 / 20</small><b id="ema">—</b></div><div class="metric"><small>Volume</small><b id="volume">—</b></div>
+</div><div class="warning">Sinais são estimativas técnicas, não garantias. A primeira versão não envia ordens reais. Use apenas para observação e simulação.</div></div>
+</section>
+<section class="grid">
+<div class="panel"><b>CONFIGURAÇÃO DE RISCO</b><p class="muted">Capital de referência para calcular o risco. Não representa saldo conectado à Binance.</p>
+<div class="row"><label>Capital USDT <input id="capitalInput" type="number" min="1" step="1" value="1000"></label><label>Risco % <input id="riskInput" type="number" min="0.1" max="2" step="0.1" value="2"></label><button class="primary" onclick="saveSettings()">Salvar</button></div><p class="muted" id="settingsMsg"></p></div>
+<div class="panel"><b>HISTÓRICO DE SINAIS</b><div id="events" class="muted" style="margin-top:8px">Aguardando sinais...</div></div>
+</section>
+</main>
+<script>
+const symbols=["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"];let selected="BTCUSDT",socket,chart,candleSeries,lastCandles={};
+const $=id=>document.getElementById(id);
+function fmt(x){return x==null||!Number.isFinite(Number(x))?"—":Number(x).toLocaleString("en-US",{maximumFractionDigits:6})}
+function renderCoins(state){$("coins").innerHTML=symbols.map(s=>{let a=state.symbols?.[s]||{};return `<div class="coin ${s===selected?'active':''}" onclick="selectCoin('${s}')"><b>${s}</b><div class="signal ${a.signal||'AGUARDAR'}">${a.signal||'CARREGANDO'}</div><small class="muted">Score: ${a.score??'—'}/100</small><div style="margin-top:8px">${fmt(a.price)}</div></div>`}).join("")}
+function renderAnalysis(a){if(!a)return;$("signal").textContent=a.signal;$("signal").className="signal "+a.signal;$("reason").textContent=a.reason||"";$("score").textContent=(a.score??"—")+"/100";$("rsi").textContent=fmt(a.rsi);$("stop").textContent=fmt(a.stop);$("target").textContent=fmt(a.target);$("ema").textContent=fmt(a.ema9)+" / "+fmt(a.ema20);$("volume").textContent=a.volume_ok?"Acima da média":"Normal/baixo";$("lastPrice").textContent=fmt(a.price);$("chartTitle").textContent=selected+" · 1 minuto"}
+function initChart(){chart=LightweightCharts.createChart($("chart"),{layout:{background:{color:"#121a2d"},textColor:"#93a4bf"},grid:{vertLines:{color:"#202c43"},horzLines:{color:"#202c43"}},rightPriceScale:{borderColor:"#26334d"},timeScale:{borderColor:"#26334d",timeVisible:true,secondsVisible:false}});candleSeries=chart.addCandlestickSeries({upColor:"#18c784",downColor:"#ff5d6c",borderVisible:false,wickUpColor:"#18c784",wickDownColor:"#ff5d6c"});new ResizeObserver(()=>chart.applyOptions({width:$("chart").clientWidth})).observe($("chart"))}
+function selectCoin(s){selected=s;renderCoins(window.latestState||{});$("chartTitle").textContent=s+" · 1 minuto";if(lastCandles[s])candleSeries.setData(lastCandles[s]);else loadCandles(s);renderAnalysis(window.latestState?.symbols?.[s])}
+function addCandle(s,c){let arr=lastCandles[s]||[];let point={time:c.time,open:c.open,high:c.high,low:c.low,close:c.close};if(arr.length&&arr[arr.length-1].time===point.time)arr[arr.length-1]=point;else arr.push(point);if(arr.length>250)arr.shift();lastCandles[s]=arr;if(s===selected)candleSeries.update(point)}
+function renderEvents(events){$("events").innerHTML=(events||[]).slice(0,20).map(e=>`<div class="event"><small>${e.time}</small><br>${e.text}</div>`).join("")||"Nenhum sinal confirmado ainda."}
+async function loadCandles(symbol){try{let r=await fetch("/api/klines/"+symbol),d=await r.json();if(d.ok){lastCandles[symbol]=d.candles.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close}));if(symbol===selected)candleSeries.setData(lastCandles[symbol]);}}catch(e){}}
+async function loadState(){let r=await fetch("/api/state"),s=await r.json();window.latestState=s;renderCoins(s);renderAnalysis(s.symbols[selected]);renderEvents(s.events);$("capitalView").textContent=fmt(s.capital);$("riskView").textContent=fmt(s.risk_pct)+"%";$("capitalInput").value=s.capital;$("riskInput").value=s.risk_pct;await Promise.all(symbols.map(loadCandles))}
+async function saveSettings(){let capital=Number($("capitalInput").value),risk_pct=Number($("riskInput").value);let r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({capital,risk_pct})});let d=await r.json();$("settingsMsg").textContent=d.ok?"Configurações salvas.":"Erro: "+d.error;if(d.ok)loadState()}
+function connect(){socket=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");socket.onopen=()=>{ $("dot").className="dot on";$("conn").textContent="Fluxo conectado"};socket.onclose=()=>{$("dot").className="dot";$("conn").textContent="Reconectando...";setTimeout(connect,2500)};socket.onerror=()=>socket.close();socket.onmessage=e=>{let m=JSON.parse(e.data);if(m.type==="status"){$("dot").className="dot "+(m.connected?"on":"");$("conn").textContent=m.connected?"Fluxo conectado":"Sem conexão"}if(m.type==="snapshot"){window.latestState=m.state;renderCoins(m.state);renderAnalysis(m.state.symbols[selected]);renderEvents(m.state.events)}if(m.type==="market"){addCandle(m.symbol,m.candle);window.latestState=window.latestState||{symbols:{}};window.latestState.symbols[m.symbol]=m.analysis;renderCoins(window.latestState);if(m.symbol===selected)renderAnalysis(m.analysis)}}}
+initChart();loadState();connect();setInterval(loadState,15000);
+</script></body></html>
