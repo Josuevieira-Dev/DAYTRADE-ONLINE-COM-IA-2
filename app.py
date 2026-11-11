@@ -68,7 +68,7 @@ def calc_atr(candles, period=14):
 def analyze(symbol):
     candles = list(history[symbol])
     if len(candles) < 55:
-        return {"symbol": symbol, "signal": "AGUARDAR", "score": 0, "reason": "Carregando histórico (mínimo 55 candles)", "ready": False}
+        return {"symbol": symbol, "signal": "AGUARDAR", "score": 0, "reason": f"Histórico insuficiente: {len(candles)}/55 candles recebidos da Binance", "ready": False, "candles_loaded": len(candles)}
     closes = [c["close"] for c in candles]
     volumes = [c["volume"] for c in candles]
     e9, e20, e50 = ema(closes, 9), ema(closes, 20), ema(closes, 50)
@@ -126,20 +126,29 @@ async def broadcast(payload):
         clients.discard(ws)
 
 async def load_history():
-    async with httpx.AsyncClient(timeout=15) as client:
+    # Futures primeiro; Spot público como alternativa para obter o histórico M1.
+    endpoints = [(f'{REST_URL}/fapi/v1/klines', 'Futures'), ('https://api.binance.com/api/v3/klines', 'Spot fallback')]
+    async with httpx.AsyncClient(timeout=20, headers={'User-Agent': 'Mozilla/5.0'}) as client:
         for symbol in SYMBOLS:
-            try:
-                r = await client.get(f"{REST_URL}/fapi/v1/klines", params={"symbol": symbol, "interval": "1m", "limit": 200})
-                r.raise_for_status()
-                for row in r.json():
-                    history[symbol].append({
-                        "time": int(row[0] / 1000), "open": float(row[1]),
-                        "high": float(row[2]), "low": float(row[3]),
-                        "close": float(row[4]), "volume": float(row[5]),
-                        "closed": int(row[6]) < int(time.time()*1000)
-                    })
-            except Exception as e:
-                app_state["events"].appendleft({"time": datetime.now().isoformat(timespec="seconds"), "text": f"{symbol}: erro ao carregar candles: {e}"})
+            loaded = False
+            errors = []
+            for url, label in endpoints:
+                try:
+                    r = await client.get(url, params={'symbol': symbol, 'interval': '1m', 'limit': 200})
+                    r.raise_for_status()
+                    rows = r.json()
+                    if not isinstance(rows, list) or len(rows) < 55:
+                        raise ValueError(f'Resposta com apenas {len(rows) if isinstance(rows, list) else 0} candles')
+                    history[symbol].clear()
+                    for row in rows:
+                        history[symbol].append({'time': int(row[0] / 1000), 'open': float(row[1]), 'high': float(row[2]), 'low': float(row[3]), 'close': float(row[4]), 'volume': float(row[5]), 'closed': int(row[6]) < int(time.time()*1000)})
+                    app_state['events'].appendleft({'time': datetime.now().strftime('%H:%M:%S'), 'text': f'{symbol}: {len(rows)} candles carregados ({label})'})
+                    loaded = True
+                    break
+                except Exception as e:
+                    errors.append(f'{label}: {str(e)[:180]}')
+            if not loaded:
+                app_state['events'].appendleft({'time': datetime.now().strftime('%H:%M:%S'), 'text': f'{symbol}: falha no histórico — ' + ' | '.join(errors)})
 
 async def market_loop():
     backoff = 2
@@ -210,6 +219,7 @@ async def state():
         "connected": app_state["connected"], "mode": app_state["mode"],
         "capital": app_state["capital"], "risk_pct": app_state["risk_pct"],
         "symbols": {s: analyze(s) for s in SYMBOLS},
+        "history_counts": {s: len(history[s]) for s in SYMBOLS},
         "events": list(app_state["events"])
     }
 
