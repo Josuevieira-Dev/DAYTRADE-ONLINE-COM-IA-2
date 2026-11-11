@@ -33,6 +33,7 @@ app_state = {
     "alerts": deque(maxlen=50),
 }
 last_confirmed_signal = {symbol: "AGUARDAR" for symbol in SYMBOLS}
+last_processed_closed = {symbol: 0 for symbol in SYMBOLS}
 history = defaultdict(lambda: deque(maxlen=250))
 clients = set()
 
@@ -161,6 +162,39 @@ async def history_refresh_loop():
         if any(len(history[symbol]) < 55 for symbol in SYMBOLS):
             await load_history()
 
+async def ingest_candle(symbol, candle):
+    if history[symbol] and history[symbol][-1]["time"] == candle["time"]:
+        history[symbol][-1] = candle
+    elif not history[symbol] or candle["time"] > history[symbol][-1]["time"]:
+        history[symbol].append(candle)
+    result = analyze(symbol)
+    app_state["symbols"][symbol] = result
+    await broadcast({"type": "market", "symbol": symbol, "candle": candle, "analysis": result})
+    if candle["closed"] and candle["time"] > last_processed_closed.get(symbol, 0):
+        last_processed_closed[symbol] = candle["time"]
+        result = analyze(symbol)
+        app_state["symbols"][symbol] = result
+        confirmed = result["signal"]
+        prior = last_confirmed_signal.get(symbol, "AGUARDAR")
+        last_confirmed_signal[symbol] = confirmed
+        if confirmed in ("LONG", "SHORT") and confirmed != prior:
+            alert = {
+                "id": f"{symbol}-{candle['time']}-{confirmed}",
+                "symbol": symbol, "signal": confirmed,
+                "action": "COMPRA" if confirmed == "LONG" else "VENDA",
+                "price": result.get("price"), "score": result.get("score"),
+                "stop": result.get("stop"), "target": result.get("target"),
+                "time": int(time.time()), "candle_time": candle["time"],
+                "reason": result.get("reason", "")
+            }
+            app_state["alerts"].appendleft(alert)
+            app_state["events"].appendleft({
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "text": f'{symbol}: sinal {confirmed} — score {result["score"]}/100'
+            })
+            await broadcast({"type": "signal_alert", "alert": alert})
+    return result
+
 async def market_loop():
     backoff = 2
     while True:
@@ -184,41 +218,7 @@ async def market_loop():
                         "close": float(k["c"]), "volume": float(k["v"]),
                         "closed": bool(k["x"])
                     }
-                    # Update current candle rather than duplicating every websocket tick.
-                    if history[symbol] and history[symbol][-1]["time"] == candle["time"]:
-                        history[symbol][-1] = candle
-                    else:
-                        history[symbol].append(candle)
-                    previous = app_state["symbols"].get(symbol, {}).get("signal")
-                    result = analyze(symbol)
-                    app_state["symbols"][symbol] = result
-                    await broadcast({"type": "market", "symbol": symbol, "candle": candle, "analysis": result})
-                    if candle["closed"]:
-                        result = analyze(symbol)
-                        app_state["symbols"][symbol] = result
-                        confirmed = result["signal"]
-                        prior_confirmed = last_confirmed_signal.get(symbol, "AGUARDAR")
-                        last_confirmed_signal[symbol] = confirmed
-                        if confirmed in ("LONG", "SHORT") and confirmed != prior_confirmed:
-                            alert = {
-                                "id": f"{symbol}-{candle['time']}-{confirmed}",
-                                "symbol": symbol,
-                                "signal": confirmed,
-                                "action": "COMPRA" if confirmed == "LONG" else "VENDA",
-                                "price": result.get("price"),
-                                "score": result.get("score"),
-                                "stop": result.get("stop"),
-                                "target": result.get("target"),
-                                "time": int(time.time()),
-                                "candle_time": candle["time"],
-                                "reason": result.get("reason", "")
-                            }
-                            app_state["alerts"].appendleft(alert)
-                            app_state["events"].appendleft({
-                                "time": datetime.now().strftime("%H:%M:%S"),
-                                "text": f'{symbol}: sinal {confirmed} — score {result["score"]}/100'
-                            })
-                            await broadcast({"type": "signal_alert", "alert": alert})
+                    await ingest_candle(symbol, candle)
         except Exception as e:
             app_state["connected"] = False
             app_state["last_errors"]["websocket"] = str(e)
@@ -266,6 +266,29 @@ async def receive_history(symbol: str, payload: dict):
         app_state["last_errors"].pop(symbol, None)
         app_state["symbols"][symbol] = analyze(symbol)
         return {"ok": True, "loaded": len(cleaned), "analysis": app_state["symbols"][symbol]}
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"ok": False, "error": f"Formato de candle inválido: {exc}"}
+
+@app.post("/api/market/{symbol}")
+async def receive_market(symbol: str, payload: dict):
+    symbol = symbol.upper()
+    if symbol not in SYMBOLS:
+        return {"ok": False, "error": "Símbolo não monitorado"}
+    rows = payload.get("candles", [])
+    if not isinstance(rows, list) or not rows:
+        return {"ok": False, "error": "Nenhum candle recebido"}
+    try:
+        # Processa candles em ordem; sinais só são confirmados no fechamento M1.
+        result = None
+        for row in sorted(rows[-3:], key=lambda item: int(item["time"])):
+            candle = {
+                "time": int(row["time"]), "open": float(row["open"]),
+                "high": float(row["high"]), "low": float(row["low"]),
+                "close": float(row["close"]), "volume": float(row.get("volume", 0)),
+                "closed": bool(row.get("closed", False))
+            }
+            result = await ingest_candle(symbol, candle)
+        return {"ok": True, "history": len(history[symbol]), "analysis": result}
     except (KeyError, TypeError, ValueError) as exc:
         return {"ok": False, "error": f"Formato de candle inválido: {exc}"}
 
