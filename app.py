@@ -28,6 +28,8 @@ app_state = {
     "risk_pct": RISK_PCT,
     "symbols": {},
     "events": deque(maxlen=100),
+    "last_errors": {},
+    "last_ticks": {},
 }
 history = defaultdict(lambda: deque(maxlen=250))
 clients = set()
@@ -150,12 +152,19 @@ async def load_history():
             if not loaded:
                 app_state['events'].appendleft({'time': datetime.now().strftime('%H:%M:%S'), 'text': f'{symbol}: falha no histórico — ' + ' | '.join(errors)})
 
+async def history_refresh_loop():
+    while True:
+        await asyncio.sleep(30)
+        if any(len(history[symbol]) < 55 for symbol in SYMBOLS):
+            await load_history()
+
 async def market_loop():
     backoff = 2
     while True:
         try:
             async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=20, close_timeout=5) as ws:
                 app_state["connected"] = True
+                app_state["last_errors"].pop("websocket", None)
                 backoff = 2
                 await broadcast({"type": "status", "connected": True})
                 async for raw in ws:
@@ -165,6 +174,7 @@ async def market_loop():
                     if not k:
                         continue
                     symbol = k["s"]
+                    app_state["last_ticks"][symbol] = int(time.time())
                     candle = {
                         "time": int(k["t"] / 1000), "open": float(k["o"]),
                         "high": float(k["h"]), "low": float(k["l"]),
@@ -176,6 +186,9 @@ async def market_loop():
                         history[symbol][-1] = candle
                     else:
                         history[symbol].append(candle)
+                    result = analyze(symbol)
+                    app_state["symbols"][symbol] = result
+                    await broadcast({"type": "market", "symbol": symbol, "candle": candle, "analysis": result})
                     if candle["closed"]:
                         result = analyze(symbol)
                         previous = app_state["symbols"].get(symbol, {}).get("signal")
@@ -185,9 +198,10 @@ async def market_loop():
                                 "time": datetime.now().strftime("%H:%M:%S"),
                                 "text": f'{symbol}: sinal {result["signal"]} — score {result["score"]}/100'
                             })
-                        await broadcast({"type": "market", "symbol": symbol, "candle": candle, "analysis": result})
         except Exception as e:
             app_state["connected"] = False
+            app_state["last_errors"]["websocket"] = str(e)
+            print(f"[WEBSOCKET] {e}", flush=True)
             await broadcast({"type": "status", "connected": False, "error": str(e)})
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
@@ -196,8 +210,10 @@ async def market_loop():
 async def lifespan(app):
     await load_history()
     task = asyncio.create_task(market_loop())
+    retry_task = asyncio.create_task(history_refresh_loop())
     yield
     task.cancel()
+    retry_task.cancel()
 
 app = FastAPI(title="IA Crypto Trader M1", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -220,6 +236,8 @@ async def state():
         "capital": app_state["capital"], "risk_pct": app_state["risk_pct"],
         "symbols": {s: analyze(s) for s in SYMBOLS},
         "history_counts": {s: len(history[s]) for s in SYMBOLS},
+        "last_ticks": app_state["last_ticks"],
+        "data_errors": app_state["last_errors"],
         "events": list(app_state["events"])
     }
 
