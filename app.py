@@ -285,7 +285,8 @@ async def state():
         "history_counts": {s: len(history[s]) for s in SYMBOLS},
         "last_ticks": app_state["last_ticks"],
         "data_errors": app_state["last_errors"],
-        "events": list(app_state["events"]),\n        "alerts": list(app_state["alerts"])
+        "events": list(app_state["events"]),
+        "alerts": list(app_state["alerts"])
     }
 
 @app.post("/api/settings")
