@@ -144,13 +144,14 @@ async def load_history():
                     history[symbol].clear()
                     for row in rows:
                         history[symbol].append({'time': int(row[0] / 1000), 'open': float(row[1]), 'high': float(row[2]), 'low': float(row[3]), 'close': float(row[4]), 'volume': float(row[5]), 'closed': int(row[6]) < int(time.time()*1000)})
-                    app_state['events'].appendleft({'time': datetime.now().strftime('%H:%M:%S'), 'text': f'{symbol}: {len(rows)} candles carregados ({label})'})
+                    app_state["last_errors"].pop(symbol, None)
                     loaded = True
                     break
                 except Exception as e:
                     errors.append(f'{label}: {str(e)[:180]}')
             if not loaded:
-                app_state['events'].appendleft({'time': datetime.now().strftime('%H:%M:%S'), 'text': f'{symbol}: falha no histórico — ' + ' | '.join(errors)})
+                app_state["last_errors"][symbol] = " | ".join(errors)
+                print(f"[HISTORY] {symbol}: " + app_state["last_errors"][symbol], flush=True)
 
 async def history_refresh_loop():
     while True:
@@ -186,12 +187,12 @@ async def market_loop():
                         history[symbol][-1] = candle
                     else:
                         history[symbol].append(candle)
+                    previous = app_state["symbols"].get(symbol, {}).get("signal")
                     result = analyze(symbol)
                     app_state["symbols"][symbol] = result
                     await broadcast({"type": "market", "symbol": symbol, "candle": candle, "analysis": result})
                     if candle["closed"]:
                         result = analyze(symbol)
-                        previous = app_state["symbols"].get(symbol, {}).get("signal")
                         app_state["symbols"][symbol] = result
                         if result["signal"] in ("LONG", "SHORT") and result["signal"] != previous:
                             app_state["events"].appendleft({
