@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>IA Crypto Trader M1</title>
-<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+
 <style>
 :root{color-scheme:dark;--bg:#0b1020;--panel:#121a2d;--line:#26334d;--muted:#93a4bf;--green:#18c784;--red:#ff5d6c;--yellow:#f6c453}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#eaf0fa;font:14px Arial,sans-serif}
@@ -52,18 +52,37 @@ button{cursor:pointer}button.primary{background:#245bd6;border:0}input{width:120
 </section>
 </main>
 <script>
-const symbols=["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"];let selected="BTCUSDT",socket,chart,candleSeries,lastCandles={};
+const symbols=["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"];let selected="BTCUSDT",socket,chartCanvas,chartCtx,lastCandles={};
 const $=id=>document.getElementById(id);
 function fmt(x){return x==null||!Number.isFinite(Number(x))?"—":Number(x).toLocaleString("en-US",{maximumFractionDigits:6})}
 function renderCoins(state){$("coins").innerHTML=symbols.map(s=>{let a=state.symbols?.[s]||{};return `<div class="coin ${s===selected?'active':''}" onclick="selectCoin('${s}')"><b>${s}</b><div class="signal ${a.signal||'AGUARDAR'}">${a.signal||'CARREGANDO'}</div><small class="muted">Score: ${a.score??'—'}/100</small><div style="margin-top:8px">${fmt(a.price)}</div></div>`}).join("")}
 function renderAnalysis(a){if(!a)return;$("signal").textContent=a.signal;$("signal").className="signal "+a.signal;$("reason").textContent=a.reason||"";$("score").textContent=(a.score??"—")+"/100";$("rsi").textContent=fmt(a.rsi);$("stop").textContent=fmt(a.stop);$("target").textContent=fmt(a.target);$("ema").textContent=fmt(a.ema9)+" / "+fmt(a.ema20);$("volume").textContent=a.volume_ok?"Acima da média":"Normal/baixo";$("lastPrice").textContent=fmt(a.price);$("chartTitle").textContent=selected+" · 1 minuto"}
-function initChart(){chart=LightweightCharts.createChart($("chart"),{layout:{background:{color:"#121a2d"},textColor:"#93a4bf"},grid:{vertLines:{color:"#202c43"},horzLines:{color:"#202c43"}},rightPriceScale:{borderColor:"#26334d"},timeScale:{borderColor:"#26334d",timeVisible:true,secondsVisible:false}});candleSeries=chart.addCandlestickSeries({upColor:"#18c784",downColor:"#ff5d6c",borderVisible:false,wickUpColor:"#18c784",wickDownColor:"#ff5d6c"});new ResizeObserver(()=>chart.applyOptions({width:$("chart").clientWidth})).observe($("chart"))}
-function selectCoin(s){selected=s;renderCoins(window.latestState||{});$("chartTitle").textContent=s+" · 1 minuto";if(lastCandles[s])candleSeries.setData(lastCandles[s]);else loadCandles(s);renderAnalysis(window.latestState?.symbols?.[s])}
-function addCandle(s,c){let arr=lastCandles[s]||[];let point={time:c.time,open:c.open,high:c.high,low:c.low,close:c.close};if(arr.length&&arr[arr.length-1].time===point.time)arr[arr.length-1]=point;else arr.push(point);if(arr.length>250)arr.shift();lastCandles[s]=arr;if(s===selected)candleSeries.update(point)}
+function initChart(){
+ const host=$("chart"); host.innerHTML="";
+ chartCanvas=document.createElement("canvas"); chartCanvas.style.width="100%"; chartCanvas.style.height="390px"; chartCanvas.style.display="block"; host.appendChild(chartCanvas);
+ chartCtx=chartCanvas.getContext("2d");
+ resizeChart(); window.addEventListener("resize",resizeChart);
+}
+function resizeChart(){if(!chartCanvas)return;const host=$("chart");const ratio=window.devicePixelRatio||1;chartCanvas.width=Math.max(320,host.clientWidth)*ratio;chartCanvas.height=390*ratio;chartCanvas.style.height="390px";drawChart()}
+function drawChart(){
+ if(!chartCtx||!chartCanvas)return;
+ const ctx=chartCtx,ratio=window.devicePixelRatio||1,w=chartCanvas.width,h=chartCanvas.height;
+ ctx.clearRect(0,0,w,h);ctx.fillStyle="#121a2d";ctx.fillRect(0,0,w,h);
+ const data=lastCandles[selected]||[];if(!data.length){ctx.fillStyle="#93a4bf";ctx.font=(14*ratio)+"px Arial";ctx.fillText("Aguardando candles...",20*ratio,35*ratio);return}
+ const shown=data.slice(-90),hi=Math.max(...shown.map(x=>x.high)),lo=Math.min(...shown.map(x=>x.low)),pad=(hi-lo)*.08||1,min=lo-pad,max=hi+pad,plotH=h-35*ratio,plotW=w-65*ratio;
+ const y=v=>plotH-(v-min)/(max-min)*plotH;
+ ctx.strokeStyle="#26334d";ctx.lineWidth=1*ratio;ctx.fillStyle="#93a4bf";ctx.font=(10*ratio)+"px Arial";
+ for(let i=0;i<=4;i++){const yy=plotH*i/4;ctx.beginPath();ctx.moveTo(0,yy);ctx.lineTo(plotW,yy);ctx.stroke();ctx.fillText((max-(max-min)*i/4).toFixed(2),plotW+7*ratio,yy+4*ratio)}
+ const step=plotW/shown.length,bw=Math.max(2*ratio,step*.62);
+ shown.forEach((c,i)=>{const x=i*step+step/2,up=c.close>=c.open;ctx.strokeStyle=up?"#18c784":"#ff5d6c";ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,y(c.high));ctx.lineTo(x,y(c.low));ctx.stroke();const top=y(Math.max(c.open,c.close)),bottom=y(Math.min(c.open,c.close));ctx.fillRect(x-bw/2,top,bw,Math.max(1*ratio,bottom-top))});
+ const last=shown[shown.length-1];ctx.fillStyle="#eaf0fa";ctx.font=(11*ratio)+"px Arial";ctx.fillText("Último: "+Number(last.close).toLocaleString("en-US",{maximumFractionDigits:6}),8*ratio,h-8*ratio);
+}
+function selectCoin(s){selected=s;renderCoins(window.latestState||{});$("chartTitle").textContent=s+" · 1 minuto";if(lastCandles[s])drawChart();else loadCandles(s);renderAnalysis(window.latestState?.symbols?.[s])}
+function addCandle(s,c){let arr=lastCandles[s]||[];let point={time:c.time,open:c.open,high:c.high,low:c.low,close:c.close};if(arr.length&&arr[arr.length-1].time===point.time)arr[arr.length-1]=point;else arr.push(point);if(arr.length>250)arr.shift();lastCandles[s]=arr;if(s===selected)drawChart()}
 function renderEvents(events){$("events").innerHTML=(events||[]).slice(0,20).map(e=>`<div class="event"><small>${e.time}</small><br>${e.text}</div>`).join("")||"Nenhum sinal confirmado ainda."}
-async function loadCandles(symbol){try{let r=await fetch("/api/klines/"+symbol),d=await r.json();if(d.ok){lastCandles[symbol]=d.candles.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close}));if(symbol===selected)candleSeries.setData(lastCandles[symbol]);}}catch(e){}}
-async function loadState(){let r=await fetch("/api/state"),s=await r.json();window.latestState=s;renderCoins(s);renderAnalysis(s.symbols[selected]);renderEvents(s.events);$("capitalView").textContent=fmt(s.capital);$("riskView").textContent=fmt(s.risk_pct)+"%";$("capitalInput").value=s.capital;$("riskInput").value=s.risk_pct;await Promise.all(symbols.map(loadCandles))}
+async function loadCandles(symbol){try{let r=await fetch("/api/klines/"+symbol),d=await r.json();if(d.ok){lastCandles[symbol]=d.candles.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close}));if(symbol===selected)drawChart();}}catch(e){}}
+async function loadState(){try{let r=await fetch("/api/state");if(!r.ok)throw new Error("Falha ao consultar o servidor");let s=await r.json();window.latestState=s;renderCoins(s);renderAnalysis(s.symbols[selected]);renderEvents(s.events);$("capitalView").textContent=fmt(s.capital);$("riskView").textContent=fmt(s.risk_pct)+"%";$("capitalInput").value=s.capital;$("riskInput").value=s.risk_pct;await Promise.all(symbols.map(loadCandles));}catch(e){$("conn").textContent="Erro ao carregar dados";$("reason").textContent=e.message;}}
 async function saveSettings(){let capital=Number($("capitalInput").value),risk_pct=Number($("riskInput").value);let r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({capital,risk_pct})});let d=await r.json();$("settingsMsg").textContent=d.ok?"Configurações salvas.":"Erro: "+d.error;if(d.ok)loadState()}
-function connect(){socket=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");socket.onopen=()=>{ $("dot").className="dot on";$("conn").textContent="Fluxo conectado"};socket.onclose=()=>{$("dot").className="dot";$("conn").textContent="Reconectando...";setTimeout(connect,2500)};socket.onerror=()=>socket.close();socket.onmessage=e=>{let m=JSON.parse(e.data);if(m.type==="status"){$("dot").className="dot "+(m.connected?"on":"");$("conn").textContent=m.connected?"Fluxo conectado":"Sem conexão"}if(m.type==="snapshot"){window.latestState=m.state;renderCoins(m.state);renderAnalysis(m.state.symbols[selected]);renderEvents(m.state.events)}if(m.type==="market"){addCandle(m.symbol,m.candle);window.latestState=window.latestState||{symbols:{}};window.latestState.symbols[m.symbol]=m.analysis;renderCoins(window.latestState);if(m.symbol===selected)renderAnalysis(m.analysis)}}}
+function connect(){if(socket&&socket.readyState===WebSocket.OPEN)return;socket=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");socket.onopen=()=>{ $("dot").className="dot on";$("conn").textContent="Fluxo conectado"};socket.onclose=()=>{$("dot").className="dot";$("conn").textContent="Reconectando...";setTimeout(connect,2500)};socket.onerror=()=>socket.close();socket.onmessage=e=>{let m=JSON.parse(e.data);if(m.type==="status"){$("dot").className="dot "+(m.connected?"on":"");$("conn").textContent=m.connected?"Fluxo conectado":"Sem conexão"}if(m.type==="snapshot"){window.latestState=m.state;renderCoins(m.state);renderAnalysis(m.state.symbols[selected]);renderEvents(m.state.events)}if(m.type==="market"){addCandle(m.symbol,m.candle);window.latestState=window.latestState||{symbols:{}};window.latestState.symbols[m.symbol]=m.analysis;renderCoins(window.latestState);if(m.symbol===selected)renderAnalysis(m.analysis)}}}
 initChart();loadState();connect();setInterval(loadState,15000);
 </script></body></html>
