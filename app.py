@@ -223,6 +223,32 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def home():
     return FileResponse("static/index.html")
 
+@app.post("/api/history/{symbol}")
+async def receive_history(symbol: str, payload: dict):
+    symbol = symbol.upper()
+    if symbol not in SYMBOLS:
+        return {"ok": False, "error": "Símbolo não monitorado"}
+    rows = payload.get("candles", [])
+    if not isinstance(rows, list) or len(rows) < 55:
+        return {"ok": False, "error": "Histórico insuficiente; são necessários ao menos 55 candles"}
+    cleaned = []
+    try:
+        for row in rows[-250:]:
+            cleaned.append({
+                "time": int(row["time"]), "open": float(row["open"]),
+                "high": float(row["high"]), "low": float(row["low"]),
+                "close": float(row["close"]), "volume": float(row.get("volume", 0)),
+                "closed": bool(row.get("closed", True))
+            })
+        cleaned.sort(key=lambda item: item["time"])
+        history[symbol].clear()
+        history[symbol].extend(cleaned)
+        app_state["last_errors"].pop(symbol, None)
+        app_state["symbols"][symbol] = analyze(symbol)
+        return {"ok": True, "loaded": len(cleaned), "analysis": app_state["symbols"][symbol]}
+    except (KeyError, TypeError, ValueError) as exc:
+        return {"ok": False, "error": f"Formato de candle inválido: {exc}"}
+
 @app.get("/api/klines/{symbol}")
 async def klines(symbol: str):
     symbol = symbol.upper()
