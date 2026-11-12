@@ -193,8 +193,16 @@ def close_trades_at_candle(symbol, candle):
         return []
     closed_now = []
     exit_price = float(candle["close"])
+    # Só encerra operações abertas DENTRO deste candle. A API envia os
+    # últimos 3 candles a cada 2s; sem este filtro, um candle antigo já
+    # fechado encerrava imediatamente uma operação recém-aberta.
+    candle_start = int(candle["time"])
+    candle_end = candle_start + 60
     for trade in paper_trades:
         if trade["status"] != "ABERTA" or trade["symbol"] != symbol:
+            continue
+        opened_at = int(trade.get("opened_at", 0))
+        if not (candle_start <= opened_at < candle_end):
             continue
         direction = 1 if trade["side"] == "COMPRA" else -1
         pnl = (exit_price - trade["entry_price"]) * trade["quantity"] * direction
