@@ -67,7 +67,26 @@ button{cursor:pointer}button.primary{background:#245bd6;border:0}input{width:120
 <p><b style="color:var(--yellow)">3. Falsa quebra:</b> o preço passa do suporte ou da resistência só com o pavio, mas o candle fecha novamente dentro da faixa. Também pode fechar fora e retornar logo depois. Isso pode prender quem entrou cedo demais.</p>
 <p><b>Como evitar confusão:</b> não decida apenas porque o preço tocou uma linha. Espere o fechamento do candle, observe volume e próximos candles e considere o contexto da tendência. Em M1 há muito ruído e sinais falsos.</p>
 </div></div></div>
-<div class="panel"><div class="row" style="justify-content:space-between"><b>ANÁLISE DA IA</b><button class="notify-btn" id="notifyBtn" onclick="enableNotifications()">Ativar notificações</button></div><div class="notify-help" id="notifyHelp">Ative para receber aviso no computador no instante em que surgir um sinal de COMPRA ou VENDA.</div><div class="analysis-head"><div class="signal AGUARDAR" id="signal">AGUARDAR DADOS</div><b id="score" class="value">—/100</b></div><div class="reason-box" style="border-color:#3b5680"><span class="label">PROBABILIDADE / FORÇA DO SINAL</span><div id="signalProbability" style="font-size:30px;font-weight:800;margin-top:5px;color:var(--yellow)">—%</div><small class="muted">Percentual baseado na pontuação técnica do sistema; não representa chance estatística comprovada de lucro.</small></div><div class="reason-box"><b>LEITURA DO MERCADO</b><div id="reason" style="margin-top:6px">Carregando histórico de mercado...</div></div><div class="score-pair"><div class="score-side LONG">FORÇA DE COMPRA <b id="longScore">—/100</b></div><div class="score-side SHORT">FORÇA DE VENDA <b id="shortScore">—/100</b></div></div><div class="signal-time" id="signalTime">Horário do sinal: aguardando confirmação</div><div class="data-status" id="dataStatus">Aguardando histórico de preços...</div>
+<div class="panel"><div class="row" style="justify-content:space-between"><b>ANÁLISE DA IA</b><button class="notify-btn" id="notifyBtn" onclick="enableNotifications()">Ativar notificações</button></div><div class="notify-help" id="notifyHelp">Ative para receber aviso no computador no instante em que surgir um sinal de COMPRA ou VENDA.</div><div class="analysis-head"><div class="signal AGUARDAR" id="signal">AGUARDAR DADOS</div><b id="score" class="value">—/100</b></div><div class="reason-box" style="border-color:#3b5680"><span class="label">PROBABILIDADE / FORÇA DO SINAL</span><div id="signalProbability" style="font-size:30px;font-weight:800;margin-top:5px;color:var(--yellow)">—%</div><small class="muted">Percentual baseado na pontuação técnica do sistema; não representa chance estatística comprovada de lucro.</small></div>
+<div class="reason-box" style="margin-top:10px;border-color:#315b4a">
+ <div class="row" style="justify-content:space-between"><b>CONTA SIMULADA</b><small style="color:var(--yellow)">SALDO FICTÍCIO · SEM ORDENS REAIS</small></div>
+ <div class="cards" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:9px">
+  <div class="metric"><small>SALDO</small><b id="paperBalance">100.000,00 USDT</b></div>
+  <div class="metric"><small>EM ABERTO</small><b id="paperFloating">0,00 USDT</b></div>
+  <div class="metric"><small>TOTAL</small><b id="paperEquity">100.000,00 USDT</b></div>
+ </div>
+ <div class="row" style="margin-top:10px">
+  <label>Ativo <select id="tradeSymbol" style="background:#1a2740;color:white;border:1px solid var(--line);padding:10px;border-radius:8px"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option><option>XRPUSDT</option></select></label>
+  <label>Valor USDT <input id="tradeAmount" type="number" min="1" step="1" value="1000"></label>
+  <button class="primary" onclick="openPaperTrade('COMPRA')">COMPRAR</button>
+  <button style="background:#7b2635" onclick="openPaperTrade('VENDA')">VENDER</button>
+ </div>
+ <div id="tradeMessage" class="muted" style="margin-top:7px">Escolha o ativo e o valor para abrir uma operação simulada.</div>
+ <div class="grid" style="grid-template-columns:1fr;gap:8px;margin-top:10px">
+  <div><b>OPERAÇÕES ABERTAS</b><div id="openTrades" class="alert-list">Nenhuma operação aberta.</div></div>
+  <div><b>ÚLTIMAS OPERAÇÕES ENCERRADAS</b><div id="closedTrades" class="alert-list">Nenhuma operação encerrada.</div></div>
+ </div>
+</div><div class="reason-box"><b>LEITURA DO MERCADO</b><div id="reason" style="margin-top:6px">Carregando histórico de mercado...</div></div><div class="score-pair"><div class="score-side LONG">FORÇA DE COMPRA <b id="longScore">—/100</b></div><div class="score-side SHORT">FORÇA DE VENDA <b id="shortScore">—/100</b></div></div><div class="signal-time" id="signalTime">Horário do sinal: aguardando confirmação</div><div class="data-status" id="dataStatus">Aguardando histórico de preços...</div>
 <div class="metrics">
 <div class="metric"><small>RSI (14)</small><b id="rsi">—</b></div>
 <div class="metric"><small>Stop estimado</small><b id="stop">—</b></div><div class="metric"><small>Alvo estimado (2R)</small><b id="target">—</b></div>
@@ -80,25 +99,7 @@ button{cursor:pointer}button.primary{background:#245bd6;border:0}input{width:120
 <div class="row"><label>Capital USDT <input id="capitalInput" type="number" min="1" step="1" value="1000"></label><label>Risco % <input id="riskInput" type="number" min="0.1" max="2" step="0.1" value="2"></label><button class="primary" onclick="saveSettings()">Salvar</button></div><p class="muted" id="settingsMsg"></p></div>
 <div class="panel"><b>HISTÓRICO DE SINAIS</b><div id="events" class="muted" style="margin-top:8px">Aguardando sinais...</div></div>
 </section>
-<section class="panel" style="margin-top:14px">
- <div class="row" style="justify-content:space-between"><b>CONTA SIMULADA — CORRETORA</b><span class="muted">DINHEIRO FICTÍCIO · SEM ORDENS REAIS</span></div>
- <div class="cards" style="margin-top:12px">
-  <div class="metric"><small>SALDO DISPONÍVEL</small><b id="paperBalance">100.000,00 USDT</b></div>
-  <div class="metric"><small>RESULTADO EM ABERTO</small><b id="paperFloating">0,00 USDT</b></div>
-  <div class="metric"><small>SALDO + RESULTADO</small><b id="paperEquity">100.000,00 USDT</b></div>
- </div>
- <div class="row" style="margin-top:14px">
-  <label>Ativo <select id="tradeSymbol" style="background:#1a2740;color:white;border:1px solid var(--line);padding:10px;border-radius:8px"><option>BTCUSDT</option><option>ETHUSDT</option><option>SOLUSDT</option><option>XRPUSDT</option></select></label>
-  <label>Valor da operação (USDT) <input id="tradeAmount" type="number" min="1" step="1" value="1000"></label>
-  <button class="primary" onclick="openPaperTrade('COMPRA')">COMPRAR</button>
-  <button style="background:#7b2635" onclick="openPaperTrade('VENDA')">VENDER</button>
- </div>
- <div id="tradeMessage" class="muted" style="margin-top:8px">Escolha o ativo e o valor para abrir uma operação simulada.</div>
- <div class="grid" style="margin-top:14px">
-  <div><b>OPERAÇÕES ABERTAS</b><div id="openTrades" class="alert-list">Nenhuma operação aberta.</div></div>
-  <div><b>OPERAÇÕES ENCERRADAS</b><div id="closedTrades" class="alert-list">Nenhuma operação encerrada.</div></div>
- </div>
-</section>
+
 </main>
 <script>
 const symbols=["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"];let selected="BTCUSDT",socket,chartCanvas,chartCtx,lastCandles={};
