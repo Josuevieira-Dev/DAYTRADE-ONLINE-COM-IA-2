@@ -187,6 +187,32 @@ async def history_refresh_loop():
         if any(len(history[symbol]) < 55 for symbol in SYMBOLS):
             await load_history()
 
+def close_trades_at_candle(symbol, candle):
+    """Encerra as operações simuladas do ativo somente quando o candle M1 fecha."""
+    if not candle.get("closed"):
+        return []
+    closed_now = []
+    exit_price = float(candle["close"])
+    for trade in paper_trades:
+        if trade["status"] != "ABERTA" or trade["symbol"] != symbol:
+            continue
+        direction = 1 if trade["side"] == "COMPRA" else -1
+        pnl = (exit_price - trade["entry_price"]) * trade["quantity"] * direction
+        trade.update({
+            "current_price": exit_price,
+            "exit_price": exit_price,
+            "floating_pnl": 0.0,
+            "pnl": round(pnl, 8),
+            "status": "FECHADA",
+            "close_reason": "FECHAMENTO_CANDLE_M1",
+            "closed_at": int(time.time())
+        })
+        app_state["capital"] = round(app_state["capital"] + pnl, 8)
+        trade["balance_after"] = app_state["capital"]
+        closed_now.append(dict(trade))
+        print(f"[PAPER TRADE] #{trade['id']} {trade['side']} {symbol} encerrada no fechamento M1 | PnL={trade['pnl']} | saldo={app_state['capital']}", flush=True)
+    return closed_now
+
 async def ingest_candle(symbol, candle):
     if history[symbol] and history[symbol][-1]["time"] == candle["time"]:
         history[symbol][-1] = candle
@@ -194,12 +220,15 @@ async def ingest_candle(symbol, candle):
         history[symbol].append(candle)
     result = analyze(symbol)
     app_state["symbols"][symbol] = result
+    closed_trades = close_trades_at_candle(symbol, candle)
     for trade in paper_trades:
         if trade["status"] == "ABERTA" and trade["symbol"] == symbol:
             direction = 1 if trade["side"] == "COMPRA" else -1
             trade["current_price"] = candle["close"]
             trade["floating_pnl"] = (candle["close"] - trade["entry_price"]) * trade["quantity"] * direction
     await broadcast({"type": "market", "symbol": symbol, "candle": candle, "analysis": result})
+    if closed_trades:
+        await broadcast({"type": "paper_trades", "closed": closed_trades, "balance": app_state["capital"]})
 
     # Detecta o sinal assim que os critérios técnicos aparecem, sem esperar fechar o M1.
     detected = result["signal"]
