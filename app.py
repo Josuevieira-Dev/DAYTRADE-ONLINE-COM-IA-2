@@ -85,24 +85,29 @@ def analyze(symbol):
     vol_ok = volumes[-1] > vol_avg
     long_score = 0
     short_score = 0
-    if e9 > e20 > e50: long_score += 30
-    if e9 < e20 < e50: short_score += 30
-    if r is not None and 50 < r < 70: long_score += 20
-    if r is not None and 30 < r < 50: short_score += 20
+    # Pontuação simétrica: compra e venda usam os mesmos critérios e pesos.
+    if e9 > e20: long_score += 20
+    elif e9 < e20: short_score += 20
+    if e20 > e50: long_score += 15
+    elif e20 < e50: short_score += 15
+    if r is not None and r >= 52: long_score += 15
+    elif r is not None and r <= 48: short_score += 15
     if closes[-1] > e9: long_score += 15
-    if closes[-1] < e9: short_score += 15
+    elif closes[-1] < e9: short_score += 15
     if macd_line > 0: long_score += 15
-    if macd_line < 0: short_score += 15
+    elif macd_line < 0: short_score += 15
+    if closes[-1] > closes[-2]: long_score += 10
+    elif closes[-1] < closes[-2]: short_score += 10
     if vol_ok:
-        if closes[-1] >= closes[-2]: long_score += 20
-        else: short_score += 20
+        if closes[-1] >= closes[-2]: long_score += 10
+        else: short_score += 10
     score = max(long_score, short_score)
     signal = "AGUARDAR"
-    reason = "Condições insuficientes ou indicadores divergentes"
-    if long_score >= 70 and long_score - short_score >= 20 and r is not None and r < 75:
-        signal, reason = "LONG", "Tendência de alta e confirmações técnicas alinhadas"
-    elif short_score >= 70 and short_score - long_score >= 20 and r is not None and r > 25:
-        signal, reason = "SHORT", "Tendência de baixa e confirmações técnicas alinhadas"
+    reason = "Aguardando alinhamento dos indicadores"
+    if long_score >= 65 and long_score - short_score >= 15 and r is not None and r < 78:
+        signal, reason = "LONG", "COMPRA: tendência e momentum favorecem movimento de alta"
+    elif short_score >= 65 and short_score - long_score >= 15 and r is not None and r > 22:
+        signal, reason = "SHORT", "VENDA: tendência e momentum favorecem movimento de baixa"
     price = closes[-1]
     stop_distance = (a or price * 0.005) * 1.5
     risk_amount = app_state["capital"] * app_state["risk_pct"] / 100
@@ -116,7 +121,7 @@ def analyze(symbol):
         "atr": a, "volume_ok": vol_ok, "stop": stop, "target": target,
         "risk_usd": risk_amount, "quantity_estimate": qty,
         "reason": reason, "ready": True,
-        "candle_time": candles[-1]["time"]
+        "candle_time": candles[-1]["time"],\n        "signal_time": int(time.time()),\n        "long_score": long_score, "short_score": short_score
     }
 
 async def broadcast(payload):
@@ -184,7 +189,7 @@ async def ingest_candle(symbol, candle):
                 "action": "COMPRA" if confirmed == "LONG" else "VENDA",
                 "price": result.get("price"), "score": result.get("score"),
                 "stop": result.get("stop"), "target": result.get("target"),
-                "time": int(time.time()), "candle_time": candle["time"],
+                "time": int(time.time()), "candle_time": candle["time"],\n                "entry_time": datetime.fromtimestamp(candle["time"], timezone.utc).astimezone().isoformat(),
                 "reason": result.get("reason", "")
             }
             app_state["alerts"].appendleft(alert)
