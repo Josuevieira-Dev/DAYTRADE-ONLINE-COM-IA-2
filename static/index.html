@@ -48,7 +48,7 @@ button{cursor:pointer}button.primary{background:#245bd6;border:0}input{width:120
 </style></head>
 <body>
 <header><div><h1>⚡ IA CRYPTO TRADER M1</h1><small>Mercado cripto · candles de 1 minuto · sinais para confirmação manual</small></div>
-<div class="row"><a class="broker-link" href="https://cortexbroker.com/traderoom" target="_blank" rel="noopener noreferrer">ABRIR CORTEX BROKER ↗</a><div class="status"><span id="dot" class="dot"></span><span id="conn">Conectando...</span><span class="muted">|</span><b>SINAIS MANUAIS</b></div></div></header>
+<div class="row"><a class="broker-link" href="https://cortexbroker.com/traderoom" target="_blank" rel="noopener noreferrer">ABRIR CORTEX BROKER ↗</a><div class="status"><span id="dot" class="dot"></span><span id="conn">Mercado: conectando...</span><span class="muted">|</span><span id="cortexLoginStatus" style="color:var(--yellow);font-weight:800">CORTEX: LOGIN NÃO VERIFICADO</span><span class="muted">|</span><b>SINAIS MANUAIS</b></div></div></header>
 <main class="wrap">
 <section class="panel market-clock" aria-label="Relógio de operação"><div class="clock-top"><div><div class="label">HORÁRIO DE BRASÍLIA</div><div id="liveClock" class="clock-time">--:--:--</div><div id="liveDate" class="muted">Carregando data...</div></div><div class="clock-count"><div class="label">PRÓXIMO CANDLE M1</div><div id="minuteCountdown" class="countdown">00:00</div><div class="muted">Tempo até virar o minuto</div></div></div></section>
 <section class="cards">
@@ -72,7 +72,7 @@ button{cursor:pointer}button.primary{background:#245bd6;border:0}input{width:120
 <div class="metric"><small>RSI (14)</small><b id="rsi">—</b></div>
 <div class="metric"><small>Stop estimado</small><b id="stop">—</b></div><div class="metric"><small>Alvo estimado (2R)</small><b id="target">—</b></div>
 <div class="metric"><small>EMA 9 / 20</small><b id="ema">—</b></div><div class="metric"><small>Volume</small><b id="volume">—</b></div>
-</div><div class="warning">A IA apenas identifica oportunidades. Confira o ativo, direção, preço e risco e confirme a operação manualmente na Cortex Broker. Nenhuma ordem é enviada pelo sistema. Valores em R$ são conversões aproximadas de referência; a cotação e o preço de execução podem variar.</div></div>
+</div><div class="warning">A IA apenas identifica oportunidades. Confira o ativo, direção, preço e risco e confirme a operação manualmente na Cortex Broker. Nenhuma ordem é enviada pelo sistema. Valores em R$ são conversões aproximadas de referência; a cotação e o preço de execução podem variar.<br><b>Conexão Cortex:</b> o login ainda não pode ser confirmado pelo painel. Abrir a página da corretora não compartilha a sessão com este sistema. O status só poderá mudar para “CONECTADO” após integração oficial autorizada pela Cortex, sem compartilhar sua senha.</div></div>
 </section>
 <section class="grid">
 <div class="panel"><b>ALERTAS DE COMPRA E VENDA</b><div class="muted" style="margin-top:6px">Avisos gerados somente após o fechamento do candle de 1 minuto e confirmação do sinal.</div><div id="alerts" class="alert-list">Nenhum alerta confirmado ainda.</div></div>
