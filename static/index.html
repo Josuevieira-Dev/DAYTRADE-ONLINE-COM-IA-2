@@ -113,13 +113,13 @@ function renderPaperTrades(data){
  $("paperFloating").style.color=Number(data.floating_pnl)>=0?"var(--green)":"var(--red)";
  $("paperEquity").textContent=money(Number(data.balance)+Number(data.floating_pnl));
  $("openTrades").innerHTML=(data.open||[]).map(t=>'<div class="alert-card '+(t.side==="COMPRA"?"buy":"sell")+'"><div class="alert-top"><b>'+t.side+' · '+t.symbol+'</b><b>'+money(t.floating_pnl)+'</b></div><small>Entrada: '+fmt(t.entry_price)+' · Atual: '+fmt(t.current_price)+' · Valor: '+money(t.amount)+'</small><button class="notify-btn" style="margin-top:8px" onclick="closePaperTrade('+t.id+')">ENCERRAR OPERAÇÃO</button></div>').join("")||"Nenhuma operação aberta.";
- $("closedTrades").innerHTML=(data.closed||[]).slice().reverse().slice(0,10).map(t=>'<div class="alert-card"><b class="'+(t.pnl>=0?"LONG":"SHORT")+'">'+t.side+' · '+t.symbol+' · '+(t.pnl>=0?"LUCRO":"PREJUÍZO")+'</b><small>Resultado: '+money(t.pnl)+' · Saldo após: '+money(t.balance_after)+'</small></div>').join("")||"Nenhuma operação encerrada.";
+ $("closedTrades").innerHTML=(data.closed||[]).slice().reverse().slice(0,10).map(t=>'<div class="alert-card"><b class="'+(t.pnl>=0?"LONG":"SHORT")+'">'+t.side+' · '+t.symbol+' · '+(t.pnl>=0?"LUCRO":"PREJUÍZO")+'</b><small>Resultado: '+money(t.pnl)+' · Saldo após: '+money(t.balance_after)+' · '+(t.close_reason==="FECHAMENTO_CANDLE_M1"?"Fechada no candle M1":"Fechamento manual")+'</small></div>').join("")||"Nenhuma operação encerrada.";
 }
 async function loadPaperTrades(){try{const r=await fetch("/api/trades");if(r.ok)renderPaperTrades(await r.json())}catch(e){}}
 async function openPaperTrade(side){
  const amount=Number($("tradeAmount").value),symbol=$("tradeSymbol").value;
  const r=await fetch("/api/trades/open",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({side,symbol,amount})});
- const d=await r.json();$("tradeMessage").textContent=d.ok?"Operação "+side+" aberta em "+symbol+". Acompanhe o resultado e encerre quando desejar.":d.error;
+ const d=await r.json();$("tradeMessage").textContent=d.ok?"Operação "+side+" aberta em "+symbol+". A operação será encerrada automaticamente quando o candle M1 fechar.":d.error;
  if(d.ok)loadPaperTrades();
 }
 async function closePaperTrade(id){
