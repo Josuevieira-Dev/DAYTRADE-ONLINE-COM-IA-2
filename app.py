@@ -121,7 +121,8 @@ def analyze(symbol):
         "atr": a, "volume_ok": vol_ok, "stop": stop, "target": target,
         "risk_usd": risk_amount, "quantity_estimate": qty,
         "reason": reason, "ready": True,
-        "candle_time": candles[-1]["time"],\n        "signal_time": int(time.time()),\n        "long_score": long_score, "short_score": short_score
+        "candle_time": candles[-1]["time"],
+        "signal_time": int(time.time())
     }
 
 async def broadcast(payload):
@@ -189,7 +190,8 @@ async def ingest_candle(symbol, candle):
                 "action": "COMPRA" if confirmed == "LONG" else "VENDA",
                 "price": result.get("price"), "score": result.get("score"),
                 "stop": result.get("stop"), "target": result.get("target"),
-                "time": int(time.time()), "candle_time": candle["time"],\n                "entry_time": datetime.fromtimestamp(candle["time"], timezone.utc).astimezone().isoformat(),
+                "time": int(time.time()), "candle_time": candle["time"],
+                "entry_time": datetime.fromtimestamp(candle["time"], timezone.utc).astimezone().isoformat(),
                 "reason": result.get("reason", "")
             }
             app_state["alerts"].appendleft(alert)
