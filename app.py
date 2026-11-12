@@ -17,14 +17,14 @@ REST_URL = "https://fapi.binance.com"
 WS_URL = "wss://fstream.binance.com/stream?streams=" + "/".join(
     f"{s.lower()}@kline_1m" for s in SYMBOLS
 )
-STARTING_CAPITAL = float(os.getenv("STARTING_CAPITAL", "1000"))
+STARTING_CAPITAL = float(os.getenv("STARTING_CAPITAL", "100000"))
 RISK_PCT = float(os.getenv("RISK_PCT", "2"))
 PAPER_MODE = os.getenv("PAPER_MODE", "true").lower() == "true"
 
 app_state = {
     "connected": False,
     "mode": "SIMULAÇÃO",
-    "capital": STARTING_CAPITAL,
+    "capital": 100000.0,
     "risk_pct": RISK_PCT,
     "symbols": {},
     "events": deque(maxlen=100),
@@ -35,6 +35,8 @@ app_state = {
 last_confirmed_signal = {symbol: "AGUARDAR" for symbol in SYMBOLS}
 history = defaultdict(lambda: deque(maxlen=250))
 clients = set()
+paper_trades = deque(maxlen=500)
+next_trade_id = 1
 
 def ema(values, period):
     if len(values) < period:
@@ -174,6 +176,11 @@ async def ingest_candle(symbol, candle):
         history[symbol].append(candle)
     result = analyze(symbol)
     app_state["symbols"][symbol] = result
+    for trade in paper_trades:
+        if trade["status"] == "ABERTA" and trade["symbol"] == symbol:
+            direction = 1 if trade["side"] == "COMPRA" else -1
+            trade["current_price"] = candle["close"]
+            trade["floating_pnl"] = (candle["close"] - trade["entry_price"]) * trade["quantity"] * direction
     await broadcast({"type": "market", "symbol": symbol, "candle": candle, "analysis": result})
 
     # Detecta o sinal assim que os critérios técnicos aparecem, sem esperar fechar o M1.
@@ -305,6 +312,50 @@ async def klines(symbol: str):
     if symbol not in SYMBOLS:
         return {"ok": False, "error": "Símbolo não monitorado"}
     return {"ok": True, "candles": list(history[symbol])}
+
+@app.get("/api/trades")
+async def get_trades():
+    opened = [dict(t) for t in paper_trades if t["status"] == "ABERTA"]
+    closed = [dict(t) for t in paper_trades if t["status"] == "FECHADA"]
+    return {"ok": True, "balance": app_state["capital"], "open": opened, "closed": closed[-100:],
+            "floating_pnl": round(sum(t.get("floating_pnl", 0) for t in opened), 8)}
+
+@app.post("/api/trades/open")
+async def open_trade(payload: dict):
+    global next_trade_id
+    side = str(payload.get("side", "")).upper()
+    symbol = str(payload.get("symbol", "")).upper()
+    try:
+        amount = float(payload.get("amount", 0))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Informe um valor válido."}
+    if side not in ("COMPRA", "VENDA") or symbol not in SYMBOLS:
+        return {"ok": False, "error": "Selecione COMPRA ou VENDA e um ativo válido."}
+    market = app_state["symbols"].get(symbol) or analyze(symbol)
+    price = market.get("price")
+    if not price or amount <= 0 or amount > app_state["capital"]:
+        return {"ok": False, "error": "Valor inválido ou maior que o saldo disponível."}
+    trade = {"id": next_trade_id, "symbol": symbol, "side": side, "amount": amount,
+             "entry_price": float(price), "current_price": float(price), "quantity": amount / float(price),
+             "floating_pnl": 0.0, "status": "ABERTA", "opened_at": int(time.time())}
+    next_trade_id += 1
+    paper_trades.appendleft(trade)
+    return {"ok": True, "trade": trade, "balance": app_state["capital"]}
+
+@app.post("/api/trades/{trade_id}/close")
+async def close_trade(trade_id: int):
+    trade = next((t for t in paper_trades if t["id"] == trade_id and t["status"] == "ABERTA"), None)
+    if not trade:
+        return {"ok": False, "error": "Operação aberta não encontrada."}
+    market = app_state["symbols"].get(trade["symbol"]) or analyze(trade["symbol"])
+    exit_price = float(market.get("price") or trade["current_price"])
+    direction = 1 if trade["side"] == "COMPRA" else -1
+    pnl = (exit_price - trade["entry_price"]) * trade["quantity"] * direction
+    trade.update({"current_price": exit_price, "exit_price": exit_price, "pnl": round(pnl, 8),
+                  "status": "FECHADA", "closed_at": int(time.time())})
+    app_state["capital"] = round(app_state["capital"] + pnl, 8)
+    trade["balance_after"] = app_state["capital"]
+    return {"ok": True, "trade": trade, "balance": app_state["capital"]}
 
 @app.get("/api/state")
 async def state():
