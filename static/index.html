@@ -101,6 +101,18 @@ function getSupportResistance(candles){
  if(!lows.length||!highs.length)return null;
  return {support:Math.min(...lows),resistance:Math.max(...highs),count:recent.length};
 }
+function getFalseBreakout(candles){
+ const data=(candles||[]).slice(-40);if(data.length<12)return null;
+ const base=data.slice(0,-3),recent=data.slice(-3);
+ const resistance=Math.max(...base.map(c=>Number(c.high)).filter(Number.isFinite));
+ const support=Math.min(...base.map(c=>Number(c.low)).filter(Number.isFinite));
+ for(let i=recent.length-1;i>=0;i--){
+  const candle=recent[i],high=Number(candle.high),low=Number(candle.low),close=Number(candle.close);
+  if(high>resistance&&close<=resistance)return {level:resistance,side:"VENDA"};
+  if(low<support&&close>=support)return {level:support,side:"COMPRA"};
+ }
+ return null;
+}
 function explainChart(){
  const candles=lastCandles[selected]||[],a=window.latestState?.symbols?.[selected],levels=getSupportResistance(candles);
  if(!levels){$("levelsExplain").textContent="Ainda precisamos de pelo menos 5 candles para estimar os níveis.";return}
@@ -122,8 +134,8 @@ function drawChart(){
  const y=v=>plotH-(v-min)/(max-min)*plotH;
  ctx.strokeStyle="#26334d";ctx.lineWidth=1*ratio;ctx.fillStyle="#93a4bf";ctx.font=(10*ratio)+"px Arial";
  for(let i=0;i<=4;i++){const yy=plotH*i/4;ctx.beginPath();ctx.moveTo(0,yy);ctx.lineTo(plotW,yy);ctx.stroke();ctx.fillText((max-(max-min)*i/4).toFixed(2),plotW+7*ratio,yy+4*ratio)}
- const levels=getSupportResistance(shown);
- if(levels){ctx.save();ctx.setLineDash([7*ratio,5*ratio]);ctx.lineWidth=1.5*ratio;ctx.strokeStyle="#18c784";ctx.beginPath();ctx.moveTo(0,y(levels.support));ctx.lineTo(plotW,y(levels.support));ctx.stroke();ctx.strokeStyle="#ff5d6c";ctx.beginPath();ctx.moveTo(0,y(levels.resistance));ctx.lineTo(plotW,y(levels.resistance));ctx.stroke();ctx.setLineDash([]);ctx.font="bold "+(10*ratio)+"px Arial";ctx.fillStyle="#18c784";ctx.fillText("SUPORTE",6*ratio,y(levels.support)-5*ratio);ctx.fillStyle="#ff5d6c";ctx.fillText("RESISTÊNCIA",6*ratio,y(levels.resistance)-5*ratio);ctx.restore();}
+ const levels=getSupportResistance(shown);const falseBreak=getFalseBreakout(shown);
+ if(levels){ctx.save();ctx.setLineDash([7*ratio,5*ratio]);ctx.lineWidth=1.5*ratio;ctx.strokeStyle="#18c784";ctx.beginPath();ctx.moveTo(0,y(levels.support));ctx.lineTo(plotW,y(levels.support));ctx.stroke();ctx.strokeStyle="#ff5d6c";ctx.beginPath();ctx.moveTo(0,y(levels.resistance));ctx.lineTo(plotW,y(levels.resistance));ctx.stroke();ctx.setLineDash([]);ctx.font="bold "+(10*ratio)+"px Arial";ctx.fillStyle="#18c784";ctx.fillText("SUPORTE",6*ratio,y(levels.support)-5*ratio);ctx.fillStyle="#ff5d6c";ctx.fillText("RESISTÊNCIA",6*ratio,y(levels.resistance)-5*ratio);ctx.restore();}if(falseBreak){const yy=y(falseBreak.level);ctx.save();ctx.strokeStyle="#f6c453";ctx.fillStyle="#f6c453";ctx.lineWidth=2*ratio;ctx.setLineDash([3*ratio,4*ratio]);ctx.beginPath();ctx.moveTo(0,yy);ctx.lineTo(plotW,yy);ctx.stroke();ctx.setLineDash([]);ctx.font="bold "+(10*ratio)+"px Arial";ctx.fillText("FALSA QUEBRA · "+falseBreak.side,6*ratio,Math.max(12*ratio,yy-7*ratio));ctx.restore();}
  const step=plotW/shown.length,bw=Math.max(2*ratio,step*.62);
  shown.forEach((c,i)=>{const x=i*step+step/2,up=c.close>=c.open;ctx.strokeStyle=up?"#18c784":"#ff5d6c";ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,y(c.high));ctx.lineTo(x,y(c.low));ctx.stroke();const top=y(Math.max(c.open,c.close)),bottom=y(Math.min(c.open,c.close));ctx.fillRect(x-bw/2,top,bw,Math.max(1*ratio,bottom-top))});
  const alerts=(window.latestState?.alerts||[]).filter(a=>a.symbol===selected&&shown.some(c=>c.time===a.candle_time)).slice(0,8);
