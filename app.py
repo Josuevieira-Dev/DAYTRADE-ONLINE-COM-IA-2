@@ -138,27 +138,45 @@ async def broadcast(payload):
         clients.discard(ws)
 
 async def load_history():
-    # Futures primeiro; Spot público como alternativa para obter o histórico M1.
-    endpoints = [(f'{REST_URL}/fapi/v1/klines', 'Futures'), ('https://api.binance.com/api/v3/klines', 'Spot fallback')]
-    async with httpx.AsyncClient(timeout=20, headers={'User-Agent': 'Mozilla/5.0'}) as client:
+    # OKX como fonte principal: Binance retorna HTTP 451 no ambiente do Render.
+    async with httpx.AsyncClient(timeout=20, headers={"User-Agent": "Mozilla/5.0"}) as client:
         for symbol in SYMBOLS:
             loaded = False
             errors = []
-            for url, label in endpoints:
+            sources = [
+                (f"https://www.okx.com/api/v5/market/candles", "OKX"),
+                (f"{REST_URL}/fapi/v1/klines", "Binance Futures"),
+                ("https://api.binance.com/api/v3/klines", "Binance Spot")
+            ]
+            for url, label in sources:
                 try:
-                    r = await client.get(url, params={'symbol': symbol, 'interval': '1m', 'limit': 200})
-                    r.raise_for_status()
-                    rows = r.json()
-                    if not isinstance(rows, list) or len(rows) < 55:
-                        raise ValueError(f'Resposta com apenas {len(rows) if isinstance(rows, list) else 0} candles')
+                    if label == "OKX":
+                        response = await client.get(url, params={"instId": symbol.replace("USDT", "-USDT"), "bar": "1m", "limit": "200"})
+                        response.raise_for_status()
+                        payload = response.json()
+                        if payload.get("code") != "0":
+                            raise ValueError(payload.get("msg") or "Resposta inválida da OKX")
+                        rows = payload.get("data", [])
+                        parsed = [{"time": int(row[0]) // 1000, "open": float(row[1]), "high": float(row[2]),
+                                   "low": float(row[3]), "close": float(row[4]), "volume": float(row[5]),
+                                   "closed": str(row[8]) == "1"} for row in rows]
+                    else:
+                        response = await client.get(url, params={"symbol": symbol, "interval": "1m", "limit": 200})
+                        response.raise_for_status()
+                        rows = response.json()
+                        parsed = [{"time": int(row[0] / 1000), "open": float(row[1]), "high": float(row[2]),
+                                   "low": float(row[3]), "close": float(row[4]), "volume": float(row[5]),
+                                   "closed": int(row[6]) < int(time.time()*1000)} for row in rows]
+                    if len(parsed) < 55:
+                        raise ValueError(f"Resposta com apenas {len(parsed)} candles")
                     history[symbol].clear()
-                    for row in rows:
-                        history[symbol].append({'time': int(row[0] / 1000), 'open': float(row[1]), 'high': float(row[2]), 'low': float(row[3]), 'close': float(row[4]), 'volume': float(row[5]), 'closed': int(row[6]) < int(time.time()*1000)})
+                    history[symbol].extend(sorted(parsed, key=lambda item: item["time"]))
                     app_state["last_errors"].pop(symbol, None)
                     loaded = True
+                    print(f"[HISTORY] {symbol}: {len(parsed)} candles via {label}", flush=True)
                     break
-                except Exception as e:
-                    errors.append(f'{label}: {str(e)[:180]}')
+                except Exception as exc:
+                    errors.append(f"{label}: {str(exc)[:160]}")
             if not loaded:
                 app_state["last_errors"][symbol] = " | ".join(errors)
                 print(f"[HISTORY] {symbol}: " + app_state["last_errors"][symbol], flush=True)
@@ -211,33 +229,41 @@ async def ingest_candle(symbol, candle):
 
 async def market_loop():
     backoff = 2
+    ws_url = "wss://ws.okx.com:8443/ws/v5/business"
     while True:
         try:
-            async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=20, close_timeout=5) as ws:
+            async with websockets.connect(ws_url, ping_interval=20, ping_timeout=20, close_timeout=5) as ws:
+                args = [{"channel": "candle1m", "instId": symbol.replace("USDT", "-USDT")} for symbol in SYMBOLS]
+                await ws.send(json.dumps({"op": "subscribe", "args": args}))
                 app_state["connected"] = True
                 app_state["last_errors"].pop("websocket", None)
                 backoff = 2
                 await broadcast({"type": "status", "connected": True})
                 async for raw in ws:
                     packet = json.loads(raw)
-                    data = packet.get("data", {})
-                    k = data.get("k")
-                    if not k:
+                    if packet.get("event"):
+                        if packet.get("event") == "error":
+                            raise RuntimeError(packet.get("msg", "Erro de assinatura OKX"))
                         continue
-                    symbol = k["s"]
-                    app_state["last_ticks"][symbol] = int(time.time())
-                    candle = {
-                        "time": int(k["t"] / 1000), "open": float(k["o"]),
-                        "high": float(k["h"]), "low": float(k["l"]),
-                        "close": float(k["c"]), "volume": float(k["v"]),
-                        "closed": bool(k["x"])
-                    }
-                    await ingest_candle(symbol, candle)
-        except Exception as e:
+                    arg = packet.get("arg", {})
+                    inst_id = arg.get("instId", "")
+                    symbol = inst_id.replace("-", "")
+                    if symbol not in SYMBOLS:
+                        continue
+                    for row in packet.get("data", []):
+                        candle = {
+                            "time": int(row[0]) // 1000, "open": float(row[1]),
+                            "high": float(row[2]), "low": float(row[3]),
+                            "close": float(row[4]), "volume": float(row[5]),
+                            "closed": str(row[8]) == "1" if len(row) > 8 else False
+                        }
+                        app_state["last_ticks"][symbol] = int(time.time())
+                        await ingest_candle(symbol, candle)
+        except Exception as exc:
             app_state["connected"] = False
-            app_state["last_errors"]["websocket"] = str(e)
-            print(f"[WEBSOCKET] {e}", flush=True)
-            await broadcast({"type": "status", "connected": False, "error": str(e)})
+            app_state["last_errors"]["websocket"] = str(exc)
+            print(f"[WEBSOCKET OKX] {exc}", flush=True)
+            await broadcast({"type": "status", "connected": False, "error": str(exc)})
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 
