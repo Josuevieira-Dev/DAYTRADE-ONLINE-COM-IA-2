@@ -33,7 +33,6 @@ app_state = {
     "alerts": deque(maxlen=50),
 }
 last_confirmed_signal = {symbol: "AGUARDAR" for symbol in SYMBOLS}
-last_processed_closed = {symbol: 0 for symbol in SYMBOLS}
 history = defaultdict(lambda: deque(maxlen=250))
 clients = set()
 
@@ -176,28 +175,29 @@ async def ingest_candle(symbol, candle):
     result = analyze(symbol)
     app_state["symbols"][symbol] = result
     await broadcast({"type": "market", "symbol": symbol, "candle": candle, "analysis": result})
-    if candle["closed"] and candle["time"] > last_processed_closed.get(symbol, 0):
-        last_processed_closed[symbol] = candle["time"]
-        result = analyze(symbol)
-        app_state["symbols"][symbol] = result
-        confirmed = result["signal"]
-        prior = last_confirmed_signal.get(symbol, "AGUARDAR")
-        last_confirmed_signal[symbol] = confirmed
-        if confirmed in ("LONG", "SHORT") and confirmed != prior:
+
+    # Detecta o sinal assim que os critérios técnicos aparecem, sem esperar fechar o M1.
+    detected = result["signal"]
+    previous = last_confirmed_signal.get(symbol, "AGUARDAR")
+    if detected != previous:
+        last_confirmed_signal[symbol] = detected
+        if detected in ("LONG", "SHORT"):
+            now = datetime.now().astimezone()
+            action = "COMPRA" if detected == "LONG" else "VENDA"
             alert = {
-                "id": f"{symbol}-{candle['time']}-{confirmed}",
-                "symbol": symbol, "signal": confirmed,
-                "action": "COMPRA" if confirmed == "LONG" else "VENDA",
+                "id": f"{symbol}-{candle['time']}-{detected}-{int(time.time())}",
+                "symbol": symbol, "signal": detected, "action": action,
                 "price": result.get("price"), "score": result.get("score"),
                 "stop": result.get("stop"), "target": result.get("target"),
-                "time": int(time.time()), "candle_time": candle["time"],
-                "entry_time": datetime.fromtimestamp(candle["time"], timezone.utc).astimezone().isoformat(),
+                "time": int(now.timestamp()), "candle_time": candle["time"],
+                "entry_time": now.isoformat(timespec="seconds"),
+                "timing": "Sinal detectado durante o candle M1",
                 "reason": result.get("reason", "")
             }
             app_state["alerts"].appendleft(alert)
             app_state["events"].appendleft({
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "text": f'{symbol}: sinal {confirmed} — score {result["score"]}/100'
+                "time": now.strftime("%H:%M:%S"),
+                "text": f'{symbol}: {action} {detected} — score {result["score"]}/100'
             })
             await broadcast({"type": "signal_alert", "alert": alert})
     return result
