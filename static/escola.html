@@ -21,7 +21,8 @@
  <form class="ai-compose" onsubmit="sendAIMessage(event)"><textarea id="ai-input" maxlength="2000" placeholder="Digite sua dúvida..." aria-label="Sua pergunta"></textarea><button id="ai-send" type="submit">Enviar</button></form>
  <div class="ai-disclaimer">Conteúdo educacional. Não é recomendação financeira nem sinal de compra ou venda.</div>
 </section>
-\n<script>
+
+<script>
 const lessons = [
 {m:"Módulo 1 • Fundamentos",level:"Básico",title:"O que é Day Trade?",goal:"Entender o que é uma operação intradiária e por que ela envolve risco elevado.",analogy:"Pense em comprar e vender um produto no mesmo dia. No Day Trade, o produto é um ativo financeiro e o preço muda continuamente. Você tenta lucrar com a variação, mas também pode perder.",steps:["Day Trade é a compra e venda do mesmo ativo no mesmo dia, conforme as regras do mercado e da corretora.","O resultado depende da diferença entre preço de entrada e saída, quantidade, custos e execução.","Alavancagem amplia a exposição: ganhos e perdas podem crescer rapidamente.","Não existe obrigação de operar todos os dias. Ficar de fora também é uma decisão."],example:"Exemplo hipotético: você compra 1 unidade por R$ 100 e vende por R$ 102. Antes de custos, o resultado é +R$ 2. Se vender por R$ 98, o resultado é -R$ 2.",question:"Day Trade significa manter obrigatoriamente uma posição por vários meses?",answer:["não","nao"],explain:"Não. A característica é abrir e encerrar a operação no mesmo dia, respeitando as regras do mercado."},
 {m:"Módulo 1 • Fundamentos",level:"Básico",title:"Mercados e ativos",goal:"Conhecer as diferenças entre cripto, Forex, ações e índices.",analogy:"Imagine diferentes feiras: cada uma tem produtos, horários, participantes e regras próprias. Os mercados financeiros também funcionam de formas diferentes.",steps:["Criptoativos: negociação em plataformas específicas, muitas vezes 24 horas por dia e 7 dias por semana.","Forex: mercado de câmbio, no qual pares representam a relação entre duas moedas.","Ações: representam participação em empresas e são negociadas nas bolsas em horários definidos.","Índices: medem o desempenho de um conjunto de ativos; contratos futuros de índices têm regras e riscos próprios.","Antes de operar, verifique o instrumento, tamanho do contrato, custos, horário, liquidez e regulamentação."],example:"EUR/USD = 1,0800 indica, de forma simplificada, que 1 euro vale 1,08 dólar. Se o par sobe, o euro se valorizou frente ao dólar no período.",question:"BTC/USDT é um par de qual mercado?",answer:["cripto","criptomoedas","criptoativos"],explain:"É um par de criptoativos: Bitcoin cotado em USDT."},
@@ -138,5 +139,6 @@ async function sendAIMessage(event){
  }catch(error){aiHistory.pop();status.textContent=error.message||"Falha ao conectar. Tente novamente."; }
  finally{button.disabled=false;button.textContent="Enviar";input.focus();}
 }
-\ndocument.getElementById("search").addEventListener("input",e=>renderNav(e.target.value));updateProgress();renderNav();showLesson(0);
+
+document.getElementById("search").addEventListener("input",e=>renderNav(e.target.value));updateProgress();renderNav();showLesson(0);
 </script></body></html>
