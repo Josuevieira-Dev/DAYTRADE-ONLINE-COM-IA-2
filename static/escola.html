@@ -14,12 +14,12 @@
 
 <button class="ai-professor-launch" onclick="toggleAIProfessor()">✦ Professor IA</button>
 <section class="ai-professor" id="ai-professor" aria-label="Professor de Day Trade com inteligência artificial">
- <div class="ai-head"><div><strong>✦ Professor IA • TRADER PRO</strong><small>Seu tutor particular de Day Trade</small></div><button class="ai-close" onclick="toggleAIProfessor()">✕</button></div>
+ <div class="ai-head"><div><strong>✦ Professor IA • TRADER PRO</strong><small>Gemini IA • opção gratuita com limite de uso</small></div><button class="ai-close" onclick="toggleAIProfessor()">✕</button></div>
  <div class="ai-messages" id="ai-messages"><div class="ai-msg bot">Olá! Sou seu professor de Day Trade. Posso explicar esta aula, tirar dúvidas, criar exemplos e ajudar você a praticar. Qual é sua dúvida?</div></div>
  <div class="ai-suggestions"><button onclick="askAISuggestion('Explique esta aula de um jeito mais simples.')">Explicar esta aula</button><button onclick="askAISuggestion('Dê um exemplo prático com números fictícios.')">Dar um exemplo</button><button onclick="askAISuggestion('Faça uma pergunta para testar meu aprendizado.')">Testar meu aprendizado</button></div>
  <div class="ai-status" id="ai-status" aria-live="polite"></div>
  <form class="ai-compose" onsubmit="sendAIMessage(event)"><textarea id="ai-input" maxlength="2000" placeholder="Digite sua dúvida..." aria-label="Sua pergunta"></textarea><button id="ai-send" type="submit">Enviar</button></form>
- <div class="ai-disclaimer">Conteúdo educacional. Não é recomendação financeira nem sinal de compra ou venda.</div>
+ <div class="ai-disclaimer">Plano gratuito sujeito a limites e cotas do Google. <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color:#8fc7ff">Criar chave gratuita no Google AI Studio</a>.<br>Conteúdo educacional; não é recomendação financeira nem sinal de compra ou venda.</div>
 </section>
 
 <script>
