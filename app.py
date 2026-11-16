@@ -452,3 +452,75 @@ async def websocket_endpoint(ws: WebSocket):
             await ws.receive_text()
     except WebSocketDisconnect:
         clients.discard(ws)
+
+
+@app.post("/api/ai-professor")
+async def ai_professor(payload: dict):
+    """Tutor educacional; a chave da API permanece somente no servidor."""
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=503,
+            detail="O Professor IA ainda precisa ser ativado: configure OPENAI_API_KEY nas variáveis de ambiente do serviço no Render."
+        )
+    messages = payload.get("messages", [])
+    if not isinstance(messages, list) or not messages:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Envie uma pergunta para o professor.")
+    safe_messages = []
+    for item in messages[-12:]:
+        if not isinstance(item, dict) or item.get("role") not in ("user", "assistant"):
+            continue
+        content = str(item.get("content", ""))[:4000]
+        if content:
+            safe_messages.append({"role": item["role"], "content": content})
+    if not safe_messages or safe_messages[-1]["role"] != "user":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="A última mensagem precisa ser uma pergunta.")
+    lesson = payload.get("lesson") or {}
+    lesson_context = json.dumps(lesson, ensure_ascii=False)[:5000]
+    system_prompt = (
+        "Você é o Professor IA do TRADER PRO e ensina Day Trade em português brasileiro. "
+        "Ensine do absoluto zero com paciência, clareza, analogias, exemplos numéricos fictícios "
+        "e passos curtos. Adapte a explicação ao nível do aluno e ao conteúdo da aula atual. "
+        "Se a pessoa errar, corrija com respeito e explique o motivo. Quando útil, proponha um "
+        "pequeno exercício e espere a resposta. Não invente cotações, gráficos, notícias ou resultados. "
+        "Nunca prometa lucro, nunca dê sinais de compra/venda, recomendações personalizadas, "
+        "previsões ou instruções para arriscar dinheiro real. Explique riscos, custos, alavancagem "
+        "e a importância da simulação. Se perguntarem o que fazer agora no mercado, explique que "
+        "você é um tutor educacional e não tem autorização para recomendar operações. "
+        "Use Markdown simples e respostas objetivas, mas completas. "
+        f"Contexto da aula aberta (dados educacionais): {lesson_context}"
+    )
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    request_body = {
+        "model": model,
+        "messages": [{"role": "system", "content": system_prompt}] + safe_messages,
+        "temperature": 0.5,
+        "max_tokens": 900
+    }
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=request_body
+            )
+        if response.status_code >= 400:
+            detail = "A API de IA recusou a solicitação. Verifique a chave, o modelo e o acesso à API."
+            try:
+                print("[AI PROFESSOR] API error:", response.text[:500], flush=True)
+            except Exception:
+                pass
+            from fastapi import HTTPException
+            raise HTTPException(status_code=502, detail=detail)
+        result = response.json()
+        answer = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        if not answer:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=502, detail="O professor não retornou uma resposta. Tente novamente.")
+        return {"ok": True, "answer": answer, "model": model}
+    except httpx.TimeoutException:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=504, detail="O professor demorou para responder. Tente novamente.")
