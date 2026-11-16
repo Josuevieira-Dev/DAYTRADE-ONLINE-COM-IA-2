@@ -526,7 +526,7 @@ async def ai_professor(payload: dict):
                 )
             result = response.json()
             parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-            answer = "\\n".join(p.get("text", "") for p in parts if p.get("text")).strip()
+            answer = "\n".join(p.get("text", "") for p in parts if p.get("text")).strip()
             if not answer:
                 raise HTTPException(status_code=502, detail="O Gemini não retornou uma resposta. Tente novamente.")
             return {"ok": True, "answer": answer, "model": model, "provider": "Gemini", "tier": "free"}
